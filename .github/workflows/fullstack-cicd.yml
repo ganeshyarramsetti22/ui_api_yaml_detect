@@ -22,7 +22,7 @@ jobs:
 
   # ============================================================
   # STAGE 0 - INFRASTRUCTURE
-  # Runs only when manually requested
+  # Runs only when manually requested with the input enabled
   # ============================================================
   infrastructure:
     name: Infrastructure
@@ -31,10 +31,6 @@ jobs:
     if: >
       github.event_name == 'workflow_dispatch' &&
       inputs.deploy_infrastructure == true
-
-    outputs:
-      ui_app_name: ${{ steps.tf_outputs.outputs.ui_app_name }}
-      api_app_name: ${{ steps.tf_outputs.outputs.api_app_name }}
 
     steps:
 
@@ -53,7 +49,7 @@ jobs:
 
       # --------------------------------------------------------
       # Terraform Init
-      # Uses Azure Blob remote state
+      # Uses Azure Blob Storage as remote state
       # --------------------------------------------------------
       - name: Terraform Init
         working-directory: terraform
@@ -86,23 +82,9 @@ jobs:
           ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Get Terraform outputs
-        id: tf_outputs
-        working-directory: terraform
-        shell: bash
-        run: |
-          UI_APP_NAME=$(terraform output -raw ui_app_name)
-          API_APP_NAME=$(terraform output -raw api_app_name)
-
-          echo "ui_app_name=$UI_APP_NAME" >> "$GITHUB_OUTPUT"
-          echo "api_app_name=$API_APP_NAME" >> "$GITHUB_OUTPUT"
-
-          echo "UI App Service: $UI_APP_NAME"
-          echo "API App Service: $API_APP_NAME"
-
 
   # ============================================================
-  # DETECT CHANGES
+  # DETECT UI / API CHANGES
   # ============================================================
   detect:
     name: Detect UI/API Changes
@@ -138,6 +120,7 @@ jobs:
 
   # ============================================================
   # STAGE 1 - BUILD UI
+  # Runs only when UI files change
   # ============================================================
   build-ui:
     name: Build UI
@@ -172,10 +155,12 @@ jobs:
         with:
           name: ui-build
           path: ui/dist
+          retention-days: 1
 
 
   # ============================================================
   # STAGE 2 - BUILD API
+  # Runs only when API files change
   # ============================================================
   build-api:
     name: Build API
@@ -209,17 +194,17 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: api-build
-          path: |
-            api/server.js
-            api/package.json
-            api/package-lock.json
+          path: api
+          retention-days: 1
 
 
   # ============================================================
   # STAGE 3 - DEPLOY UI
+  # Runs only when UI build succeeds
   # ============================================================
   deploy-ui:
     name: Deploy UI
+
     needs:
       - detect
       - build-ui
@@ -252,9 +237,11 @@ jobs:
 
   # ============================================================
   # STAGE 4 - DEPLOY API
+  # Runs only when API build succeeds
   # ============================================================
   deploy-api:
     name: Deploy API
+
     needs:
       - detect
       - build-api

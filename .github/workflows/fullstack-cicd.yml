@@ -22,12 +22,16 @@ jobs:
   # ============================================================
   # STAGE 0 - INFRASTRUCTURE
   # Runs on every push.
-  # Terraform creates resources if they don't exist.
-  # If resources already exist in remote state, no changes are made.
+  # Terraform creates resources if they are not in state.
+  # Existing resources managed by remote state will show no changes.
   # ============================================================
   infrastructure:
     name: Infrastructure
     runs-on: ubuntu-latest
+
+    outputs:
+      ui_app_name: ${{ steps.tf_outputs.outputs.ui_app_name }}
+      api_app_name: ${{ steps.tf_outputs.outputs.api_app_name }}
 
     steps:
 
@@ -44,6 +48,10 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
+      # --------------------------------------------------------
+      # Terraform Init
+      # Uses Azure Blob Storage remote state
+      # --------------------------------------------------------
       - name: Terraform Init
         working-directory: terraform
         run: terraform init
@@ -74,6 +82,23 @@ jobs:
           ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # --------------------------------------------------------
+      # Get App Service names from Terraform outputs
+      # --------------------------------------------------------
+      - name: Get Terraform outputs
+        id: tf_outputs
+        working-directory: terraform
+        shell: bash
+        run: |
+          UI_APP_NAME=$(terraform output -raw ui_app_name)
+          API_APP_NAME=$(terraform output -raw api_app_name)
+
+          echo "ui_app_name=$UI_APP_NAME" >> "$GITHUB_OUTPUT"
+          echo "api_app_name=$API_APP_NAME" >> "$GITHUB_OUTPUT"
+
+          echo "UI App Service: $UI_APP_NAME"
+          echo "API App Service: $API_APP_NAME"
 
 
   # ============================================================
@@ -114,6 +139,7 @@ jobs:
 
   # ============================================================
   # STAGE 2 - BUILD UI
+  # Runs only when UI files change
   # ============================================================
   build-ui:
     name: Build UI
@@ -153,6 +179,7 @@ jobs:
 
   # ============================================================
   # STAGE 3 - BUILD API
+  # Runs only when API files change
   # ============================================================
   build-api:
     name: Build API
@@ -197,6 +224,7 @@ jobs:
     name: Deploy UI
 
     needs:
+      - infrastructure
       - detect
       - build-ui
 
@@ -222,7 +250,7 @@ jobs:
       - name: Deploy UI
         uses: azure/webapps-deploy@v3
         with:
-          app-name: ${{ vars.UI_APP_NAME }}
+          app-name: ${{ needs.infrastructure.outputs.ui_app_name }}
           package: ui-dist
 
 
@@ -233,6 +261,7 @@ jobs:
     name: Deploy API
 
     needs:
+      - infrastructure
       - detect
       - build-api
 
@@ -258,5 +287,5 @@ jobs:
       - name: Deploy API
         uses: azure/webapps-deploy@v3
         with:
-          app-name: ${{ vars.API_APP_NAME }}
+          app-name: ${{ needs.infrastructure.outputs.api_app_name }}
           package: api

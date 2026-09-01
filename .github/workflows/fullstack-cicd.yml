@@ -1,0 +1,242 @@
+name: Full Stack CI/CD
+
+on:
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+    inputs:
+      deploy_infrastructure:
+        description: "Create or update Azure infrastructure"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+
+  # ============================================================
+  # STAGE 0 - INFRASTRUCTURE
+  # ============================================================
+  infrastructure:
+    name: Infrastructure
+    runs-on: ubuntu-latest
+
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy_infrastructure == true
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init
+
+      - name: Terraform Validate
+        working-directory: terraform
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: terraform
+        run: terraform plan
+
+      - name: Terraform Apply
+        working-directory: terraform
+        run: terraform apply -auto-approve
+
+
+  # ============================================================
+  # DETECT CHANGES
+  # ============================================================
+  detect:
+    name: Detect UI/API Changes
+    runs-on: ubuntu-latest
+
+    outputs:
+      ui_changed: ${{ steps.filter.outputs.ui }}
+      api_changed: ${{ steps.filter.outputs.api }}
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed components
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            ui:
+              - 'ui/**'
+
+            api:
+              - 'api/**'
+
+      - name: Show detected changes
+        run: |
+          echo "UI changed: ${{ steps.filter.outputs.ui }}"
+          echo "API changed: ${{ steps.filter.outputs.api }}"
+
+
+  # ============================================================
+  # STAGE 1 - BUILD UI
+  # ============================================================
+  build-ui:
+    name: Build UI
+    needs: detect
+    if: needs.detect.outputs.ui_changed == 'true'
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install UI dependencies
+        working-directory: ui
+        run: npm ci
+
+      - name: Build UI
+        working-directory: ui
+        run: npm run build
+
+      - name: Upload UI build
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-build
+          path: ui/dist
+
+
+  # ============================================================
+  # STAGE 2 - BUILD API
+  # ============================================================
+  build-api:
+    name: Build API
+    needs: detect
+    if: needs.detect.outputs.api_changed == 'true'
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+
+      - name: Install API dependencies
+        working-directory: api
+        run: npm ci
+
+      - name: Test API
+        working-directory: api
+        run: npm test
+
+      - name: Upload API
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-build
+          path: |
+            api/server.js
+            api/package.json
+            api/package-lock.json
+
+
+  # ============================================================
+  # STAGE 3 - DEPLOY UI
+  # ============================================================
+  deploy-ui:
+    name: Deploy UI
+    needs:
+      - detect
+      - build-ui
+
+    if: needs.detect.outputs.ui_changed == 'true'
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Download UI build
+        uses: actions/download-artifact@v4
+        with:
+          name: ui-build
+          path: ui-dist
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy UI to Azure App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.UI_APP_NAME }}
+          package: ui-dist
+
+
+  # ============================================================
+  # STAGE 4 - DEPLOY API
+  # ============================================================
+  deploy-api:
+    name: Deploy API
+    needs:
+      - detect
+      - build-api
+
+    if: needs.detect.outputs.api_changed == 'true'
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Download API build
+        uses: actions/download-artifact@v4
+        with:
+          name: api-build
+          path: api
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy API to Azure App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.API_APP_NAME }}
+          package: api

@@ -2,7 +2,7 @@ subscription_id = "eaa1d34a-86c5-42fa-b32d-48a41329da48"
 
 location = "Central India"
 
-resource_group_name = "rg-fullstack-cicd"
+resource_group_name = "rg-fullstack-Gani"
 
 app_service_plan_name = "asp-fullstack-cicd"
 

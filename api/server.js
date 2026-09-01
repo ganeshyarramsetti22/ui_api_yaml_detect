@@ -8,7 +8,7 @@ app.use(express.json());
 
 app.get("/", (req, res) => {
     res.json({
-        message: "Hello from Full Stack API .....api version",
+        message: "Hello from Full Stack API .....api version 2.0",
         version: "2.0.0"
     });
 });

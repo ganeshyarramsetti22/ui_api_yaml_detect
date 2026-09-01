@@ -14,6 +14,6 @@ os_type = "Linux"
 
 sku_name = "B1"
 
-node_version = "22-lts"
+node_version = "20-lts"
 
 api_port = "8080"

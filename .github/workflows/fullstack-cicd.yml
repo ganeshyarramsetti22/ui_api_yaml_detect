@@ -11,26 +11,23 @@ on:
         description: "Create or update Azure infrastructure"
         required: true
         type: boolean
-        default: false
+        default: true
 
 permissions:
   id-token: write
   contents: read
 
-
 jobs:
 
   # ============================================================
   # STAGE 0 - INFRASTRUCTURE
-  # Runs only when manually requested with the input enabled
+  # Runs on every push.
+  # Terraform creates resources if they don't exist.
+  # If resources already exist in remote state, no changes are made.
   # ============================================================
   infrastructure:
     name: Infrastructure
     runs-on: ubuntu-latest
-
-    if: >
-      github.event_name == 'workflow_dispatch' &&
-      inputs.deploy_infrastructure == true
 
     steps:
 
@@ -47,10 +44,6 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      # --------------------------------------------------------
-      # Terraform Init
-      # Uses Azure Blob Storage as remote state
-      # --------------------------------------------------------
       - name: Terraform Init
         working-directory: terraform
         run: terraform init
@@ -84,10 +77,11 @@ jobs:
 
 
   # ============================================================
-  # DETECT UI / API CHANGES
+  # STAGE 1 - DETECT UI / API CHANGES
   # ============================================================
   detect:
     name: Detect UI/API Changes
+    needs: infrastructure
     runs-on: ubuntu-latest
 
     outputs:
@@ -119,8 +113,7 @@ jobs:
 
 
   # ============================================================
-  # STAGE 1 - BUILD UI
-  # Runs only when UI files change
+  # STAGE 2 - BUILD UI
   # ============================================================
   build-ui:
     name: Build UI
@@ -159,8 +152,7 @@ jobs:
 
 
   # ============================================================
-  # STAGE 2 - BUILD API
-  # Runs only when API files change
+  # STAGE 3 - BUILD API
   # ============================================================
   build-api:
     name: Build API
@@ -199,8 +191,7 @@ jobs:
 
 
   # ============================================================
-  # STAGE 3 - DEPLOY UI
-  # Runs only when UI build succeeds
+  # STAGE 4 - DEPLOY UI
   # ============================================================
   deploy-ui:
     name: Deploy UI
@@ -236,8 +227,7 @@ jobs:
 
 
   # ============================================================
-  # STAGE 4 - DEPLOY API
-  # Runs only when API build succeeds
+  # STAGE 5 - DEPLOY API
   # ============================================================
   deploy-api:
     name: Deploy API

@@ -6,19 +6,31 @@ on:
       - main
 
   workflow_dispatch:
+    inputs:
+      deploy_infrastructure:
+        description: "Create or update Azure infrastructure"
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   id-token: write
   contents: read
 
+
 jobs:
 
   # ============================================================
   # STAGE 0 - INFRASTRUCTURE
+  # Runs only when manually requested
   # ============================================================
   infrastructure:
     name: Infrastructure
     runs-on: ubuntu-latest
+
+    if: >
+      github.event_name == 'workflow_dispatch' &&
+      inputs.deploy_infrastructure == true
 
     outputs:
       ui_app_name: ${{ steps.tf_outputs.outputs.ui_app_name }}
@@ -39,9 +51,18 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
+      # --------------------------------------------------------
+      # Terraform Init
+      # Uses Azure Blob remote state
+      # --------------------------------------------------------
       - name: Terraform Init
         working-directory: terraform
         run: terraform init
+        env:
+          ARM_USE_OIDC: true
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Terraform Validate
         working-directory: terraform
@@ -50,10 +71,20 @@ jobs:
       - name: Terraform Plan
         working-directory: terraform
         run: terraform plan
+        env:
+          ARM_USE_OIDC: true
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Terraform Apply
         working-directory: terraform
         run: terraform apply -auto-approve
+        env:
+          ARM_USE_OIDC: true
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Get Terraform outputs
         id: tf_outputs
@@ -110,9 +141,7 @@ jobs:
   # ============================================================
   build-ui:
     name: Build UI
-    needs:
-      - infrastructure
-      - detect
+    needs: detect
 
     if: needs.detect.outputs.ui_changed == 'true'
 
@@ -150,9 +179,7 @@ jobs:
   # ============================================================
   build-api:
     name: Build API
-    needs:
-      - infrastructure
-      - detect
+    needs: detect
 
     if: needs.detect.outputs.api_changed == 'true'
 
@@ -194,7 +221,6 @@ jobs:
   deploy-ui:
     name: Deploy UI
     needs:
-      - infrastructure
       - detect
       - build-ui
 
@@ -220,7 +246,7 @@ jobs:
       - name: Deploy UI
         uses: azure/webapps-deploy@v3
         with:
-          app-name: ${{ needs.infrastructure.outputs.ui_app_name }}
+          app-name: ${{ vars.UI_APP_NAME }}
           package: ui-dist
 
 
@@ -230,7 +256,6 @@ jobs:
   deploy-api:
     name: Deploy API
     needs:
-      - infrastructure
       - detect
       - build-api
 
@@ -256,5 +281,5 @@ jobs:
       - name: Deploy API
         uses: azure/webapps-deploy@v3
         with:
-          app-name: ${{ needs.infrastructure.outputs.api_app_name }}
+          app-name: ${{ vars.API_APP_NAME }}
           package: api

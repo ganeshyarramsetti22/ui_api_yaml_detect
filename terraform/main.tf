@@ -5,6 +5,8 @@ terraform {
     storage_account_name = "stfullstackcicd2026"
     container_name       = "tfstate"
     key                  = "fullstack.tfstate"
+    use_azuread_auth     = true
+
   }
 
   required_providers {

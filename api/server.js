@@ -9,7 +9,7 @@ app.use(express.json());
 app.get("/", (req, res) => {
     res.json({
         message: "Hello from Full Stack API .....api",
-        version: "1.0.0"
+        version: "2.0.0"
     });
 });
 

@@ -8,7 +8,7 @@ app.use(express.json());
 
 app.get("/", (req, res) => {
     res.json({
-        message: "Hello from full stack hari API .....api version",
+        message: "Hello from full stack hari API .....api version2",
         version: "2.0.0"
     });
 });
